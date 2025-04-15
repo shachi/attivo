@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  role             String            @default("user") // buyer, user, admin
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  purchasedAssets  Asset[]           @relation("Purchaser")
+  usingAssets      Asset[]           @relation("CurrentUser")
+  notifications    Notification[]
+}
+
+model AssetType {
+  id                     String  @id @default(cuid())
+  name                   String  @unique
+  description            String?
+  defaultDepreciationPeriod Int?
+  requiredFields         String?
+  optionalFields         String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  assets                 Asset[]
+}
+
+model Asset {
+  id                 String      @id @default(cuid())
+  name               String
+  description        String?
+  serialNumber       String?
+  assetTypeId        String
+  assetType          AssetType   @relation(fields: [assetTypeId], references: [id])
+  purchaseDate       DateTime
+  purchasePrice      Float?
+  currency           String      @default("JPY")
+  purchasedById      String
+  purchasedBy        User        @relation("Purchaser", fields: [purchasedById], references: [id])
+  currentUserId      String
+  currentUser        User        @relation("CurrentUser", fields: [currentUserId], references: [id])
+  status             String      @default("active") // active, expired, disposed
+  location           String?
+  notes              String?
+  warrantyExpiryDate DateTime?
+  depreciationPeriod Int?         // 月単位
+  renewalDate        DateTime?
+  licenseKey         String?
+  tags               String?      // カンマ区切りのタグ
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  documents          Document[]
+  notifications      Notification[]
+  history            AssetHistory[]
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  assetId     String
+  asset       Asset    @relation(fields: [assetId], references: [id])
+  name        String
+  description String?
+  fileUrl     String
+  fileType    String
+  uploadedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  assetId      String
+  asset        Asset    @relation(fields: [assetId], references: [id])
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  type         String   // warranty_expiry, renewal_due, depreciation_complete, other
+  title        String
+  message      String
+  isRead       Boolean  @default(false)
+  scheduledDate DateTime
+  sentDate     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AssetHistory {
+  id            String    @id @default(cuid())
+  assetId       String
+  asset         Asset     @relation(fields: [assetId], references: [id])
+  action        String    // created, updated, transferred, renewed, disposed
+  fromUserId    String?
+  toUserId      String?
+  previousValue String?
+  newValue      String?
+  performedById String
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+model NotificationRule {
+  id            String   @id @default(cuid())
+  assetType     String   // hardware, software, subscription, domain, ssl_certificate, rental
+  eventType     String   // warranty_expiry, renewal_due, return_due, depreciation_complete
+  daysInAdvance Int
+  notifyUsers   String   // カンマ区切りのユーザーID
+  emailEnabled  Boolean  @default(true)
+  appEnabled    Boolean  @default(true)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
