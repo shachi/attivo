@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+# sqlite db
+/prisma/dev.db
 
 # production
 /build
