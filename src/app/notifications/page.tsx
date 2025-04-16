@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Plus } from "lucide-react";
+import { Bell, Plus, RefreshCw } from "lucide-react";
+
 import Navbar from "@/components/Navbar";
 import {
   NotificationRule,
@@ -17,6 +18,13 @@ export default function NotificationSettings() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingNotifications, setGeneratingNotifications] =
+    useState<boolean>(false);
+  const [generationResult, setGenerationResult] = useState<{
+    success?: boolean;
+    count?: number;
+    error?: string;
+  } | null>(null);
 
   // 編集中のルール
   const [editingRule, setEditingRule] = useState<NotificationRule | null>(null);
@@ -54,6 +62,40 @@ export default function NotificationSettings() {
     { value: "rental", label: "レンタル品" },
   ];
 
+  const generateNotifications = async () => {
+    if (!confirm("通知ルールに基づいて新しい通知を生成しますか？")) {
+      return;
+    }
+
+    try {
+      setGeneratingNotifications(true);
+      setGenerationResult(null);
+
+      const response = await fetch("/api/notifications/generate", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error("通知の生成に失敗しました");
+      }
+
+      const result = await response.json();
+      setGenerationResult({
+        success: true,
+        count: result.count,
+      });
+    } catch (err) {
+      console.error("通知生成エラー:", err);
+      setGenerationResult({
+        success: false,
+        error:
+          err instanceof Error ? err.message : "不明なエラーが発生しました",
+      });
+    } finally {
+      setGeneratingNotifications(false);
+    }
+  };
+
   // データ取得
   useEffect(() => {
     const fetchData = async () => {
@@ -88,10 +130,15 @@ export default function NotificationSettings() {
 
   // 通知ルールの追加
   const addRule = () => {
-    setEditingRule({
-      ...emptyRule,
-      notifyUserIds: [],
-    } as unknown as NotificationRule);
+    // ディープコピーして新しいオブジェクトを作成
+    const newRule = JSON.parse(
+      JSON.stringify({
+        ...emptyRule,
+        notifyUserIds: [] as string[],
+      }),
+    );
+
+    setEditingRule(newRule as NotificationRule);
   };
 
   // 通知ルールの編集
@@ -247,6 +294,7 @@ export default function NotificationSettings() {
       newUserIds.push(userId);
     }
 
+    // 明示的にnotifyUserIdsを設定して更新
     setEditingRule({
       ...editingRule,
       notifyUserIds: newUserIds,
@@ -314,6 +362,16 @@ export default function NotificationSettings() {
           <h1 className="text-2xl font-bold text-gray-900">通知設定</h1>
           <div className="flex space-x-2">
             <button
+              className={`px-4 py-2 bg-green-600 text-white rounded-md flex items-center hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed`}
+              onClick={generateNotifications}
+              disabled={generatingNotifications}
+            >
+              <RefreshCw
+                className={`w-4 h-4 mr-2 ${generatingNotifications ? "animate-spin" : ""}`}
+              />
+              {generatingNotifications ? "生成中..." : "通知生成"}
+            </button>
+            <button
               className="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center hover:bg-blue-700"
               onClick={addRule}
             >
@@ -322,6 +380,24 @@ export default function NotificationSettings() {
             </button>
           </div>
         </div>
+
+        {/* 通知生成の結果メッセージを表示 */}
+        {generationResult && (
+          <div
+            className={`mb-6 px-4 py-3 rounded relative ${
+              generationResult.success
+                ? "bg-green-50 border border-green-200 text-green-700"
+                : "bg-red-50 border border-red-200 text-red-700"
+            }`}
+            role="alert"
+          >
+            <span className="block sm:inline">
+              {generationResult.success
+                ? `${generationResult.count}件の通知が生成されました。`
+                : `通知生成中にエラーが発生しました: ${generationResult.error}`}
+            </span>
+          </div>
+        )}
 
         {loading ? (
           <div className="bg-white rounded-lg shadow p-6 text-center py-10">
@@ -542,16 +618,18 @@ export default function NotificationSettings() {
 
         {/* 通知ルール編集モーダル */}
         {editingRule && (
-          <div
-            className="fixed inset-0 overflow-y-auto"
-            aria-labelledby="modal-title"
-            role="dialog"
-            aria-modal="true"
-          >
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* 背景オーバーレイ */}
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50"
+              onClick={() => setEditingRule(null)}
+            ></div>
             <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              {/* 背景オーバーレイ - クリックでモーダルを閉じる */}
               <div
                 className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
                 aria-hidden="true"
+                onClick={() => setEditingRule(null)}
               ></div>
 
               <span
@@ -561,131 +639,121 @@ export default function NotificationSettings() {
                 &#8203;
               </span>
 
-              <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                  <div className="sm:flex sm:items-start">
-                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                      <h3
-                        className="text-lg leading-6 font-medium text-gray-900"
-                        id="modal-title"
+              <div
+                className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
+                onClick={(e) => e.stopPropagation()} // クリックの伝播を止める
+              >
+                {/* モーダルコンテンツ */}
+                <div className="relative bg-white rounded-lg max-w-lg w-full mx-auto z-50 p-6">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    通知ルールの編集
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label
+                        htmlFor="eventType"
+                        className="block text-sm font-medium text-gray-700"
                       >
-                        通知ルールの編集
-                      </h3>
-                      <div className="mt-4 space-y-4">
-                        <div>
-                          <label
-                            htmlFor="eventType"
-                            className="block text-sm font-medium text-gray-700"
-                          >
-                            イベントタイプ{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            id="eventType"
-                            className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            value={editingRule.eventType}
-                            onChange={(e) =>
-                              handleEditingRuleChange(
-                                "eventType",
-                                e.target.value,
-                              )
-                            }
-                          >
-                            <option value="">選択してください</option>
-                            {eventTypes.map((type) => (
+                        イベントタイプ <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        id="eventType"
+                        className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        value={editingRule.eventType || ""}
+                        onChange={(e) =>
+                          handleEditingRuleChange("eventType", e.target.value)
+                        }
+                      >
+                        <option value="">選択してください</option>
+                        {eventTypes.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="assetType"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        資産タイプ <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        id="assetType"
+                        className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        value={editingRule.assetType}
+                        onChange={(e) =>
+                          handleEditingRuleChange("assetType", e.target.value)
+                        }
+                        disabled={!editingRule.eventType}
+                      >
+                        <option value="">選択してください</option>
+                        {editingRule.eventType &&
+                          getRelevantAssetTypes(editingRule.eventType).map(
+                            (type) => (
                               <option key={type.value} value={type.value}>
                                 {type.label}
                               </option>
-                            ))}
-                          </select>
-                        </div>
+                            ),
+                          )}
+                      </select>
+                    </div>
 
-                        <div>
-                          <label
-                            htmlFor="assetType"
-                            className="block text-sm font-medium text-gray-700"
-                          >
-                            資産タイプ <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            id="assetType"
-                            className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            value={editingRule.assetType}
-                            onChange={(e) =>
-                              handleEditingRuleChange(
-                                "assetType",
-                                e.target.value,
-                              )
-                            }
-                            disabled={!editingRule.eventType}
-                          >
-                            <option value="">選択してください</option>
-                            {editingRule.eventType &&
-                              getRelevantAssetTypes(editingRule.eventType).map(
-                                (type) => (
-                                  <option key={type.value} value={type.value}>
-                                    {type.label}
-                                  </option>
-                                ),
-                              )}
-                          </select>
-                        </div>
+                    <div>
+                      <label
+                        htmlFor="daysInAdvance"
+                        className="block text-sm font-medium text-gray-700"
+                      >
+                        通知タイミング（日前）{" "}
+                        <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        id="daysInAdvance"
+                        className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        value={editingRule.daysInAdvance}
+                        min="1"
+                        max="365"
+                        onChange={(e) =>
+                          handleEditingRuleChange(
+                            "daysInAdvance",
+                            parseInt(e.target.value, 10) || 1,
+                          )
+                        }
+                      />
+                    </div>
 
-                        <div>
-                          <label
-                            htmlFor="daysInAdvance"
-                            className="block text-sm font-medium text-gray-700"
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">
+                        通知先ユーザー <span className="text-red-500">*</span>
+                      </label>
+                      <div className="mt-1 max-h-48 overflow-y-auto border border-gray-300 rounded-md divide-y">
+                        {users.map((user) => (
+                          <div
+                            key={user.id}
+                            className="flex items-center px-3 py-2 hover:bg-gray-50"
                           >
-                            通知タイミング（日前）{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
-                          <input
-                            type="number"
-                            id="daysInAdvance"
-                            className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                            value={editingRule.daysInAdvance}
-                            min="1"
-                            max="365"
-                            onChange={(e) =>
-                              handleEditingRuleChange(
-                                "daysInAdvance",
-                                parseInt(e.target.value, 10) || 1,
-                              )
-                            }
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700">
-                            通知先ユーザー{" "}
-                            <span className="text-red-500">*</span>
-                          </label>
-                          <div className="mt-1 max-h-48 overflow-y-auto border border-gray-300 rounded-md divide-y">
-                            {users.map((user) => (
-                              <div
-                                key={user.id}
-                                className="flex items-center px-3 py-2 hover:bg-gray-50"
-                              >
-                                <input
-                                  id={`user-${user.id}`}
-                                  type="checkbox"
-                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                  checked={
-                                    editingRule.notifyUserIds &&
-                                    editingRule.notifyUserIds.includes(user.id)
-                                  }
-                                  onChange={() => handleUserSelection(user.id)}
-                                />
-                                <label
-                                  htmlFor={`user-${user.id}`}
-                                  className="ml-3 block text-sm text-gray-700"
-                                >
-                                  {user.name}
-                                </label>
-                              </div>
-                            ))}
+                            <input
+                              id={`user-${user.id}`}
+                              type="checkbox"
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              checked={
+                                editingRule.notifyUserIds
+                                  ? editingRule.notifyUserIds.includes(user.id)
+                                  : false
+                              }
+                              onChange={() => handleUserSelection(user.id)}
+                            />
+                            <label
+                              htmlFor={`user-${user.id}`}
+                              className="ml-3 block text-sm text-gray-700"
+                            >
+                              {user.name}
+                            </label>
                           </div>
-                        </div>
+                        ))}
 
                         <div className="flex flex-col space-y-2">
                           <label className="block text-sm font-medium text-gray-700">
@@ -758,22 +826,23 @@ export default function NotificationSettings() {
                       </div>
                     </div>
                   </div>
-                </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                  <button
-                    type="button"
-                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                    onClick={saveRule}
-                  >
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                    onClick={() => setEditingRule(null)}
-                  >
-                    キャンセル
-                  </button>
+
+                  <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                    <button
+                      type="button"
+                      className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      onClick={() => setEditingRule(null)}
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                      onClick={saveRule}
+                    >
+                      保存
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

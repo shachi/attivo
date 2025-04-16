@@ -1,7 +1,33 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Package, Bell, Users, Settings } from "lucide-react";
 
 const Navbar = () => {
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // 未読通知のカウントを取得
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const response = await fetch("/api/notifications?isRead=false");
+        if (response.ok) {
+          const data = await response.json();
+          setUnreadCount(data.length);
+        }
+      } catch (error) {
+        console.error("未読通知の取得に失敗しました:", error);
+      }
+    };
+
+    fetchUnreadCount();
+
+    // 1分ごとに再取得（オプション）
+    const interval = setInterval(fetchUnreadCount, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <nav className="bg-gray-800 text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -26,25 +52,39 @@ const Navbar = () => {
                   新規登録
                 </Link>
                 <Link
+                  href="/users"
+                  className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
+                >
+                  ユーザー管理
+                </Link>
+                <Link
                   href="/notifications"
                   className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
                 >
                   通知設定
                 </Link>
                 <Link
-                  href="/users"
+                  href="/notifications/history"
                   className="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-700"
                 >
-                  ユーザー
+                  通知履歴
                 </Link>
               </div>
             </div>
           </div>
           <div className="hidden md:block">
             <div className="ml-4 flex items-center md:ml-6">
-              <button className="p-1 rounded-full hover:bg-gray-700 focus:outline-none">
+              <Link
+                href="/notifications/history"
+                className="relative p-1 rounded-full hover:bg-gray-700 focus:outline-none"
+              >
                 <Bell className="h-6 w-6" />
-              </button>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </Link>
               <button className="ml-3 p-1 rounded-full hover:bg-gray-700 focus:outline-none">
                 <Settings className="h-6 w-6" />
               </button>
